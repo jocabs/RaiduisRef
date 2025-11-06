@@ -1,0 +1,107 @@
+✅ Final Full PowerShell Script
+This version extracts:
+> Timestamp
+> UserName
+> NAS IP Address
+> Client MAC (Calling-Station-Id)
+> AP MAC & SSID (Called-Station-Id)
+> Reason Code
+> Result (Success / Accounting / Other)and exports both CSV and HTML reports beautifully formatted.
+
+############ Run the PowerShell Script ##########
+# Define file paths
+$logPath = "C:\Users\VBuendicho\Downloads\IN251104.log"
+$csvPath = "$env:USERPROFILE\Desktop\NPS_Report.csv"
+$htmlPath = "$env:USERPROFILE\Desktop\NPS_Report.html"
+
+# Get today's date
+$today = Get-Date -Format "yyyy-MM-dd"
+
+# Read and wrap XML log file
+$xmlContent = Get-Content $logPath -Raw
+$wrappedXml = "<Events>$xmlContent</Events>"
+[xml]$logXml = $wrappedXml
+
+# Extract and transform events
+$data = $logXml.Events.Event | ForEach-Object {
+    $timestamp = if ($_.Timestamp) { $_.Timestamp.InnerText.Trim() } else { '' }
+    $userName  = if ($_.'User-Name') { $_.'User-Name'.InnerText.Trim() } else { '' }
+    $nasIp     = if ($_.'NAS-IP-Address') { $_.'NAS-IP-Address'.InnerText.Trim() } else { '' }
+    $reason    = if ($_.'Reason-Code') { $_.'Reason-Code'.InnerText.Trim() } else { '' }
+    $macClient = if ($_.'Calling-Station-Id') { $_.'Calling-Station-Id'.InnerText.Trim() } else { '' }
+    $calledId  = if ($_.'Called-Station-Id') { $_.'Called-Station-Id'.InnerText.Trim() } else { '' }
+
+    # Split Called-Station-Id into AP MAC and SSID
+    $apMac = ""
+    $ssid  = ""
+    if ($calledId -match ":") {
+        $parts = $calledId -split ":"
+        $apMac = $parts[0]
+        $ssid  = $parts[1]
+    }
+
+    # Determine result
+    $result = switch ($reason) {
+        0  { "Success" }
+        16 { "Accounting" }
+        default { "Other" }
+    }
+
+    # Combine with today's date
+    $fullTimestamp = if ($timestamp) { "$today $timestamp" } else { '' }
+
+    [PSCustomObject]@{
+        Timestamp   = $fullTimestamp
+        UserName    = $userName
+        NASIP       = $nasIp
+        ClientMAC   = $macClient
+        AccessPoint = $apMac
+        SSID        = $ssid
+        ReasonCode  = $reason
+        Result      = $result
+    }
+}
+
+# Export to CSV
+$data | Export-Csv $csvPath -NoTypeInformation -Encoding UTF8
+
+# --- Create HTML report ---
+$htmlHeader = @"
+<html>
+<head>
+<title>NPS Report</title>
+<style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; }
+    h1 { text-align: center; color: #333; }
+    table { border-collapse: collapse; width: 100%; background: white; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #0078d7; color: white; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    tr:hover { background-color: #e6f7ff; }
+    .success { color: green; font-weight: bold; }
+    .accounting { color: darkorange; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Network Policy Server (NPS) Authentication Report</h1>
+<p><b>Generated on:</b> $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")</p>
+"@
+
+$htmlFooter = @"
+</body>
+</html>
+"@
+
+# Convert data to HTML table
+$tableHtml = $data | ConvertTo-Html -Property Timestamp, UserName, NASIP, ClientMAC, AccessPoint, SSID, ReasonCode, Result -Fragment
+
+# Combine and save HTML
+$htmlReport = $htmlHeader + $tableHtml + $htmlFooter
+$htmlReport | Out-File -FilePath $htmlPath -Encoding utf8
+
+# Open HTML automatically
+Start-Process $htmlPath
+
+Write-Host "✅ CSV and HTML reports generated successfully:"
+Write-Host "   CSV : $csvPath"
+Write-Host "   HTML: $htmlPath"
