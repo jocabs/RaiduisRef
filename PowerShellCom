@@ -166,4 +166,78 @@ $data | Export-Csv $csvPath -NoTypeInformation -Encoding UTF8
 Write-Host "✅ CSV report generated successfully:"
 Write-Host "   CSV : $csvPath"
 
+######### FINAL SCRIPT of app.py ##############
+import streamlit as st
+import pandas as pd
+import os
+import uuid
+from streamlit_autorefresh import st_autorefresh
+
+# === Configuration ===
+CSV_FOLDER = os.path.expanduser("~/nps_app/csv")
+REFRESH_INTERVAL = 15  # seconds
+
+st.set_page_config(page_title="NPS Report Viewer", layout="wide")
+st.title("📊 NPS Report Viewer")
+
+# === Auto-refresh ===
+st_autorefresh(interval=REFRESH_INTERVAL * 1000, key=f"refresh_{uuid.uuid4()}")
+
+# === Sidebar Controls ===
+st.sidebar.header("📂 File Management")
+
+# Upload new CSV
+uploaded_file = st.sidebar.file_uploader(
+    "Upload a new CSV file",
+    type=["csv"],
+    key="file_uploader_main"
+)
+
+# Select old CSVs
+csv_files = sorted(
+    [f for f in os.listdir(CSV_FOLDER) if f.endswith(".csv")],
+    reverse=True
+)
+selected_csv = None
+
+if csv_files:
+    selected_csv = st.sidebar.selectbox(
+        "Or choose an existing CSV file:",
+        csv_files,
+        index=0,
+        key="csv_selector"
+    )
+
+# === Data Loading ===
+df = pd.DataFrame()
+
+# Handle file upload
+if uploaded_file:
+    csv_path = os.path.join(CSV_FOLDER, uploaded_file.name)
+    with open(csv_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    st.sidebar.success(f"✅ Uploaded and saved: {uploaded_file.name}")
+    df = pd.read_csv(csv_path)
+
+# Handle selected CSV
+elif selected_csv:
+    csv_path = os.path.join(CSV_FOLDER, selected_csv)
+    df = pd.read_csv(csv_path)
+    st.info(f"📄 Showing file: {selected_csv}")
+
+else:
+    st.warning("No CSV file uploaded or found.")
+
+# === Display Table ===
+if not df.empty:
+    st.dataframe(df, use_container_width=True, height=600)
+else:
+    st.write("Waiting for CSV data...")
+
+# === Footer ===
+st.sidebar.markdown("---")
+st.sidebar.caption("Auto-refreshes every 15 seconds.")
+
+
+
 
